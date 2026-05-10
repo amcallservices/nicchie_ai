@@ -41,6 +41,19 @@ export interface SearchResult {
     pageTitle: string
     cardsFound: number
     extractionStatus: string
+    diagnostics?: {
+      totalExtracted: number
+      validBooks: number
+      completeBooks: number
+      completeness: number
+      missingTitle: number
+      missingPrice: number
+      missingRating: number
+      missingReviews: number
+      missingImage: number
+      missingUrl: number
+      missingAsin: number
+    }
   }
 }
 
@@ -99,6 +112,52 @@ async function closeBrowser(): Promise<void> {
 // Get random delay for anti-bot
 function randomDelay(min: number = 1000, max: number = 3000): number {
   return Math.floor(Math.random() * (max - min + 1)) + min
+}
+
+// AUTO-SCROLL: Lazy load dynamic content
+async function autoScroll(page: any): Promise<void> {
+  try {
+    // Get initial height
+    let lastHeight = await page.evaluate(() => document.body.scrollHeight)
+    let scrollCount = 0
+    const maxScrolls = 5
+    
+    while (scrollCount < maxScrolls) {
+      // Scroll to different positions randomly
+      const positions = [
+        Math.random() * 0.3,  // 0-30%
+        Math.random() * 0.5 + 0.3,  // 30-80%
+        Math.random() * 0.7 + 0.3,  // 30-100%
+        lastHeight - 500,  // Near bottom
+      ]
+      
+      for (const pos of positions) {
+        await page.evaluate((y: number) => window.scrollTo(0, y), pos * lastHeight)
+        await page.waitForTimeout(randomDelay(300, 600))
+      }
+      
+      // Scroll back up a bit
+      await page.evaluate(() => window.scrollTo(0, 0))
+      await page.waitForTimeout(randomDelay(200, 400))
+      
+      // Check if new content loaded
+      const newHeight = await page.evaluate(() => document.body.scrollHeight)
+      if (newHeight === lastHeight) {
+        // No new content, try a few more times
+        scrollCount++
+      } else {
+        lastHeight = newHeight
+        scrollCount = 0
+      }
+    }
+    
+    // Final scroll to top
+    await page.evaluate(() => window.scrollTo(0, 0))
+    await page.waitForTimeout(randomDelay(300, 500))
+    
+  } catch (e: any) {
+    console.log('[SCROLL] Auto-scroll error:', e.message)
+  }
 }
 
 // Extract ASIN from URL
@@ -189,6 +248,11 @@ export async function searchAmazonBooks(
     // Random delay before interaction
     await page_instance.waitForTimeout(randomDelay(1500, 2500))
     
+    // AUTO-SCROLL: Lazy load dynamic content
+    console.log('[SCROLL] Starting auto-scroll...')
+    await autoScroll(page_instance)
+    console.log('[SCROLL] Auto-scroll complete')
+    
     // Stealth: Simulate human behavior - move mouse
     await page_instance.mouse.move(Math.random() * 500, Math.random() * 500)
     await page_instance.waitForTimeout(randomDelay(200, 500))
@@ -252,111 +316,175 @@ export async function searchAmazonBooks(
     
     const books: AmazonBook[] = []
     
-    // Try multiple selectors for book cards
-    const bookCards = $('div[data-component-type="sb-product-search-result"], div.s-result-item, div[data-asin]')
+    // Try multiple container selectors
+    const containerSelectors = [
+      '[data-component-type="s-search-result"]',
+      '.s-result-item', 
+      '.sg-col-inner',
+      'div[data-asin]',
+      '.a-card-container',
+      '.s-ad-container',
+    ]
     
-    console.log(`Found ${bookCards.length} potential book cards`)
-    
-    bookCards.each((_, element) => {
-      try {
-        const el = $(element)
-        const asin = el.attr('data-asin') || ''
-        
-        if (!asin || asin === ' ' || asin.length < 5) return
-        
-        // Title - try multiple selectors
-        let title = ''
-        const titleEl = el.find('h2 a span, a.a-text-bold span, .a-text-normal span').first()
-        title = titleEl.text().trim() || el.find('h2').text().trim()
-        
-        if (!title) return
-        
-        // URL
-        const urlPart = el.find('h2 a, a.a-link-normal').first().attr('href') || ''
-        const url = urlPart ? `${marketplaceConfig.baseUrl}${urlPart.split('?')[0]}` : ''
-        
-        // Author
-        const author = el.find('.a-color-secondary .a-size-base, .a-color-secondary').first().text().trim() || 'Unknown'
-        
-        // Price
-        let price = ''
-        const priceEl = el.find('.a-price-whole, .a-price .a-offscreen').first()
-        price = priceEl.text().trim() || el.find('.a-price').text().trim()
-        
-        // Original price (if discounted)
-        const originalPriceEl = el.find('.a-text-price').first()
-        const originalPrice = originalPriceEl.text().trim()
-        
-        // Rating
-        let rating = 0
-        const ratingEl = el.find('.a-icon-alt, [aria-label*="star"]').first()
-        const ratingText = ratingEl.text().trim()
-        const ratingMatch = ratingText?.match(/([\d.]+)/)
-        rating = ratingMatch ? parseFloat(ratingMatch[1]) : 0
-        
-        // Reviews count
-        let reviews = 0
-        const reviewsEl = el.find('.a-size-base.s-link-style, [aria-label*="review"]').first()
-        const reviewsText = reviewsEl.text().trim()
-        reviews = parseReviews(reviewsText)
-        
-        // Image
-        const imageEl = el.find('img').first()
-        let imageUrl = imageEl.attr('src') || imageEl.attr('data-old-hi-res') || ''
-        
-        // Prime badge
-        const isPrime = el.find('.a-icon-prime').length > 0
-        
-        // Bestseller badge
-        const isBestseller = el.find('.a-badge Bestseller').length > 0 || el.find('text=Bestseller').length > 0
-        
-        books.push({
-          title,
-          author,
-          price,
-          originalPrice: originalPrice || undefined,
-          rating,
-          reviews,
-          url,
-          imageUrl,
-          asin,
-          isPrime: isPrime || undefined,
-          isBestseller: isBestseller || undefined,
-        })
-      } catch (e) {
-        // Skip broken entries
-      }
-    })
-    
-    // If no books found with first method, try alternative selectors
-    if (books.length === 0) {
-      const altCards = $('div.s-card-container, .product-result')
-      altCards.each((_, element) => {
+    // Try each container selector
+    for (const selector of containerSelectors) {
+      const elements = $(selector)
+      console.log(`[EXTRACT] Selector "${selector}": ${elements.length} found`)
+      
+      if (elements.length === 0) continue
+      
+      // Extract books from this container type
+      let extracted = 0
+      elements.each((_, element) => {
         try {
           const el = $(element)
-          const titleEl = el.find('h3, h2, .product-title').first()
-          const title = titleEl.text().trim()
+          const asin = el.attr('data-asin') || ''
+          if (!asin || asin.length < 5) return
           
+          // Multi-selector for title
+          let title = ''
+          const titleSelectors = ['h2 span', '.a-size-medium', '.a-text-bold', 'h2 a span']
+          for (const sel of titleSelectors) {
+            const t = el.find(sel).first().text().trim()
+            if (t) { title = t; break }
+          }
           if (!title || title.length < 3) return
           
-          const linkEl = el.find('a').first()
-          const urlPart = linkEl.attr('href') || ''
-          const url = urlPart ? `${marketplaceConfig.baseUrl}${urlPart.split('?')[0]}` : ''
-          const asin = extractASIN(url)
+          // URL
+          const urlEl = el.find('h2 a').first()
+          let url = ''
+          if (urlEl.length) {
+            url = marketplaceConfig.baseUrl + (urlEl.attr('href') || '').split('?')[0]
+          }
+          
+          // Author
+          let author = 'Unknown'
+          const authorSelectors = ['.a-color-secondary', '.a-size-base']
+          for (const sel of authorSelectors) {
+            const a = el.find(sel).first().text().trim()
+            if (a && a.length > 2) { author = a; break }
+          }
+          
+          // Price
+          let price = ''
+          const priceEl = el.find('.a-price, .a-price-whole').first()
+          if (priceEl.length) price = priceEl.text().trim()
+          
+          // Image
+          const imgEl = el.find('img').first()
+          const imageUrl = imgEl.attr('src') || imgEl.attr('data-old-hi-res') || ''
           
           books.push({
             title,
-            author: el.find('.author, .contributorName').first().text().trim() || 'Unknown',
-            price: el.find('.a-price, .price').first().text().trim(),
+            author,
+            price,
             rating: 0,
             reviews: 0,
             url,
-            imageUrl: el.find('img').first().attr('src') || '',
+            imageUrl,
             asin,
           })
+          extracted++
         } catch (e) {}
       })
+      
+      if (extracted > 0) {
+        console.log(`[EXTRACT] ✅ Success: ${extracted} books from "${selector}"`)
+        break
+      }
     }
+    
+    // If still no books, try raw HTML extraction
+    if (books.length === 0) {
+      console.log('[EXTRACT] ⚠️ Trying raw HTML regex extraction...')
+      
+      // Extract using regex on raw HTML
+      const asinRegex = /data-asin="([A-Z0-9]{10})"/g
+      let match
+      let count = 0
+      
+      while ((match = asinRegex.exec(html)) !== null && count < 20) {
+        const asin = match[1]
+        
+        // Find nearby title
+        const startIdx = Math.max(0, match.index - 500)
+        const endIdx = match.index
+        const snippet = html.substring(startIdx, endIdx)
+        
+        // Extract title from h2 tag before this ASIN
+        const titleMatch = snippet.match(/<h2[^>]*>([^<]{5,150})<\/h2>/)
+        const title = titleMatch ? titleMatch[1].trim() : ''
+        
+        if (title && !title.includes('class="a-text-ellipsis"')) {
+          books.push({
+            title,
+            author: 'Unknown',
+            price: '',
+            rating: 0,
+            reviews: 0,
+            url: `${marketplaceConfig.baseUrl}/dp/${asin}`,
+            imageUrl: '',
+            asin,
+          })
+          count++
+        }
+      }
+      
+      console.log(`[EXTRACT] Regex extraction: ${books.length} books`)
+    }
+    
+    console.log(`[EXTRACT] Total raw books: ${books.length}`)
+    
+    // DIAGNOSTICS: Calculate field completeness
+    let completeBooks = 0
+    let missingTitle = 0, missingPrice = 0, missingRating = 0, missingReviews = 0, missingImage = 0, missingUrl = 0, missingAsin = 0
+    
+    const validBooks: AmazonBook[] = []
+    
+    for (const book of books) {
+      const hasTitle = book.title && book.title.length > 3
+      const hasPrice = book.price && book.price.length > 0
+      const hasRating = book.rating > 0
+      const hasReviews = book.reviews > 0
+      const hasImage = book.imageUrl && book.imageUrl.length > 10
+      const hasUrl = book.url && book.url.length > 10
+      const hasAsin = book.asin && book.asin.length === 10
+      
+      if (!hasTitle) missingTitle++
+      if (!hasPrice) missingPrice++
+      if (!hasRating) missingRating++
+      if (!hasReviews) missingReviews++
+      if (!hasImage) missingImage++
+      if (!hasUrl) missingUrl++
+      if (!hasAsin) missingAsin++
+      
+      // Valid book must have: title + (url OR price)
+      if (hasTitle && (hasUrl || hasPrice)) {
+        validBooks.push(book)
+        if (hasPrice && hasRating && hasReviews) completeBooks++
+      }
+    }
+    
+    // Filter to only valid books
+    const finalBooks = books.filter(b => 
+      b.title && b.title.length > 3 && 
+      (b.url?.length > 10 || b.price?.length > 0)
+    )
+    
+    // Calculate completeness percentage
+    const totalFields = finalBooks.length * 7 // 7 fields per book
+    const filledFields = (finalBooks.length - missingTitle) + (finalBooks.length - missingPrice) + (finalBooks.length - missingRating) + 
+                   (finalBooks.length - missingReviews) + (finalBooks.length - missingImage) + 
+                   (finalBooks.length - missingUrl) + (finalBooks.length - missingAsin)
+    const completeness = totalFields > 0 ? Math.round((filledFields / totalFields) * 100) : 0
+    
+    console.log(`[DIAGNOSTICS]
+  - Total extracted: ${books.length}
+  - Valid books: ${finalBooks.length}
+  - Complete books: ${completeBooks}
+  - Completeness: ${completeness}%
+  - Missing: title=${missingTitle}, price=${missingPrice}, rating=${missingRating}, reviews=${missingReviews}, image=${missingImage}, url=${missingUrl}, asin=${missingAsin}
+`)
     
     // Get total results
     let totalResults = 0
@@ -366,14 +494,14 @@ export async function searchAmazonBooks(
     if (totalMatch) {
       totalResults = parseReviews(totalMatch[1])
     }
-    
+
     await context.close()
-    
-    console.log(`[SCRAPER] Extracted ${books.length} books`)
-    
+
+    console.log(`[SCRAPER] Extracted ${finalBooks.length} valid books`)
+
     return {
-      books: books.slice(0, 20),
-      totalResults: totalResults || books.length,
+      books: finalBooks.slice(0, 20),
+      totalResults: totalResults || finalBooks.length,
       keyword,
       searchTime: Date.now() - startTime,
       page,
@@ -381,8 +509,21 @@ export async function searchAmazonBooks(
       debug: {
         htmlLength: html.length,
         pageTitle: $('title').text().substring(0, 50),
-        cardsFound: books.length,
-        extractionStatus: books.length > 0 ? 'success' : 'empty',
+        cardsFound: finalBooks.length,
+        extractionStatus: finalBooks.length > 0 ? 'success' : 'empty',
+        diagnostics: {
+          totalExtracted: books.length,
+          validBooks: finalBooks.length,
+          completeBooks,
+          completeness,
+          missingTitle,
+          missingPrice,
+          missingRating,
+          missingReviews,
+          missingImage,
+          missingUrl,
+          missingAsin,
+        },
       },
     }
   } catch (error: any) {
