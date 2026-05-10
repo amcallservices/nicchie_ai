@@ -160,6 +160,269 @@ async function autoScroll(page: any): Promise<void> {
   }
 }
 
+// LIVE DOM EXTRACTION: Extract directly from browser
+async function extractFromLiveDOM(page: any, baseUrl: string): Promise<AmazonBook[]> {
+  const books: AmazonBook[] = []
+  
+  try {
+    // Try multiple container selectors
+    const selectors = [
+      '[data-component-type="s-search-result"]',
+      '.s-result-item',
+      '.sg-col-inner',
+      'div[data-asin]',
+      '.a-card-container',
+    ]
+    
+    for (const selector of selectors) {
+      const elements = await page.$$(selector)
+      if (elements.length === 0) continue
+      
+      console.log(`[LIVE-DOM] ${selector}: ${elements.length} elements`)
+      
+      // Use $$eval for fast extraction
+      const extracted = await page.$$eval(selector, (els: any[], bUrl: string) => {
+        return els.map((el: any) => {
+          // Get ASIN
+          const asin = el.getAttribute('data-asin') || ''
+          if (!asin || asin.length < 5) return null
+          
+          // Get title - try multiple methods
+          const titleEl = el.querySelector('h2 a span, .a-size-medium, .a-text-bold, h2')
+          const title = titleEl?.textContent?.trim() || ''
+          if (!title || title.length < 3) return null
+          
+          // Get URL
+          const linkEl = el.querySelector('h2 a, a.a-link-normal')
+          const url = linkEl?.href ? bUrl + linkEl.href.split('?')[0] : ''
+          
+          // Get author
+          const authorEl = el.querySelector('.a-color-secondary, .a-size-base')
+          const author = authorEl?.textContent?.trim() || 'Unknown'
+          
+          // Get price
+          const priceEl = el.querySelector('.a-price .a-offscreen, .a-price-whole, .a-price')
+          const price = priceEl?.textContent?.trim() || ''
+          
+          // Get rating - use aria-label
+          const ratingEl = el.querySelector('.a-icon-alt, [aria-label*="star"]')
+          let rating = 0
+          if (ratingEl) {
+            const match = ratingEl.textContent?.match(/([\d.]+)/)
+            if (match) rating = parseFloat(match[1])
+          }
+          
+          // Get reviews
+          const reviewEl = el.querySelector('.a-size-base.s-link-style, .s-underline-text, [aria-label*="review"]')
+          let reviews = 0
+          if (reviewEl) {
+            const text = reviewEl.textContent?.trim() || ''
+            const cleaned = text.replace(/[^0-9,]/g, '')
+            reviews = parseInt(cleaned.replace(/,/g, '')) || 0
+          }
+          
+          // Get image
+          const imgEl = el.querySelector('img')
+          const imageUrl = imgEl?.src || imgEl?.getAttribute('data-old-hi-res') || ''
+          
+          return {
+            title,
+            author,
+            price,
+            rating,
+            reviews,
+            url,
+            imageUrl,
+            asin,
+          }
+        }).filter(Boolean)
+      }, baseUrl)
+      
+      if (extracted.length > 0) {
+        console.log(`[LIVE-DOM] Extracted ${extracted.length} from ${selector}`)
+        books.push(...extracted)
+        break
+      }
+    }
+    
+  } catch (e: any) {
+    console.log('[LIVE-DOM] Error:', e.message)
+  }
+  
+  return books
+}
+
+// CHEERIO EXTRACTION: Fallback static HTML parsing
+async function extractFromCheerio($: any, html: string, baseUrl: string): Promise<AmazonBook[]> {
+  const books: AmazonBook[] = []
+  
+  const selectors = [
+    '[data-component-type="s-search-result"]',
+    '.s-result-item',
+    '.sg-col-inner',
+    'div[data-asin]',
+  ]
+  
+  for (const selector of selectors) {
+    const elements = $(selector)
+    if (elements.length === 0) continue
+    
+    elements.each((_: any, el: any) => {
+      try {
+        const $el = $(el)
+        const asin = $el.attr('data-asin') || ''
+        if (!asin || asin.length < 5) return
+        
+        const title = $el.find('h2 span, h2').first().text().trim()
+        if (!title || title.length < 3) return
+        
+        const urlEl = $el.find('h2 a').first()
+        const url = urlEl.length ? baseUrl + (urlEl.attr('href') || '').split('?')[0] : ''
+        
+        const author = $el.find('.a-color-secondary').first().text().trim() || 'Unknown'
+        const price = $el.find('.a-price').first().text().trim() || ''
+        const imgEl = $el.find('img').first()
+        const imageUrl = imgEl.attr('src') || imgEl.attr('data-old-hi-res') || ''
+        
+        books.push({
+          title,
+          author,
+          price,
+          rating: 0,
+          reviews: 0,
+          url,
+          imageUrl,
+          asin,
+        })
+      } catch (e: any) {}
+    })
+    
+    if (books.length > 0) break
+  }
+  
+  return books
+}
+
+// MERGE: Combine live + cheerio extractions
+function mergeExtractions(live: AmazonBook[], cheerio: AmazonBook[]): AmazonBook[] {
+  const merged: AmazonBook[] = []
+  const seen = new Set<string>()
+  
+  // Add live books first (they have more complete data)
+  for (const book of live) {
+    if (book.asin && !seen.has(book.asin)) {
+      merged.push(book)
+      seen.add(book.asin)
+    }
+  }
+  
+  // Add cheerio books that aren't already added
+  for (const book of cheerio) {
+    if (book.asin && !seen.has(book.asin)) {
+      merged.push(book)
+      seen.add(book.asin)
+    }
+  }
+  
+  return merged
+}
+
+// PRODUCT ENRICHMENT: Get detailed metadata from product pages
+async function enrichProduct(page: any, asin: string, baseUrl: string): Promise<Partial<AmazonBook>> {
+  try {
+    // Navigate to product page with shorter timeout
+    const productUrl = `${baseUrl}/dp/${asin}`
+    await page.goto(productUrl, { waitUntil: 'domcontentloaded', timeout: 15000 })
+    await page.waitForTimeout(randomDelay(1000, 1500))
+    
+    // Extract detailed fields
+    const details = await page.$eval('body', () => {
+      const result: any = {}
+      
+      // BSR - Best Seller Rank
+      const bsrCell = document.querySelector('[id*="SalesRank"], #SalesRank, [data-asin="' + asin + '"]')
+        || Array.from(document.querySelectorAll('#detailBullets_feature_div li')).find(el => el.textContent?.includes('#'))
+      if (bsrCell) {
+        const bsrMatch = bsrCell.textContent?.match(/#([\d,]+)/)
+        if (bsrMatch) result.bsr = parseInt(bsrMatch[1].replace(/,/g, ''))
+      }
+      
+      // Pages
+      const pagesEl = document.querySelector('#detailsInlineData, [data-asin="' + asin + '"]')
+        || Array.from(document.querySelectorAll('.a-text-bold')).find(el => el.textContent?.includes('pages'))
+      if (pagesEl) {
+        const pagesMatch = pagesEl.textContent?.match(/(\d+)\s+pages?/)
+        if (pagesMatch) result.pages = parseInt(pagesMatch[1])
+      }
+      
+      // Publication date
+      const pubEl = Array.from(document.querySelectorAll('.a-text-bold')).find(el => 
+        el.textContent?.match(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2},?\s+\d{4}\b/)
+      )
+      if (pubEl) result.publicationDate = pubEl.textContent?.trim()
+      
+      // Publisher
+      const pubEl2 = Array.from(document.querySelectorAll('.a-text-bold, #publisher ~ *')).find(el => 
+        el.textContent?.includes('Publisher:') || el.className?.includes('publisher')
+      )
+      if (pubEl2) result.publisher = pubEl2.textContent?.replace('Publisher:', '').trim()
+      
+      // Format / Edition
+      const formatEl = Array.from(document.querySelectorAll('.a-text-bold')).find(el =>
+        el.textContent?.includes('Edition') || el.textContent?.includes('Format')
+      )
+      if (formatEl) result.format = formatEl.textContent?.trim()
+      
+      // Language
+      const langEl = Array.from(document.querySelectorAll('.a-text-bold')).find(el =>
+        el.textContent?.includes('Language')
+      )
+      if (langEl) result.format = langEl.textContent?.trim()
+      
+      return result
+    })
+    
+    return details
+    
+  } catch (e: any) {
+    console.log(`[ENRICH] Failed to enrich ${asin}:`, e.message)
+    return {}
+  }
+}
+
+// CONCURRENT ENRICHMENT: Process multiple products with queue
+async function enrichProducts(
+  page: any, 
+  asins: string[], 
+  baseUrl: string,
+  onProgress?: (current: number, total: number) => void
+): Promise<Map<string, any>> {
+  const enriched = new Map<string, any>()
+  const concurrency = 3  // Process 3 at a time
+  const total = Math.min(asins.length, 10)  // Max 10 products
+  
+  for (let i = 0; i < total; i += concurrency) {
+    const batch = asins.slice(i, i + concurrency)
+    
+    await Promise.all(
+      batch.map(async (asin) => {
+        const details = await enrichProduct(page, asin, baseUrl)
+        if (details) enriched.set(asin, details)
+        
+        // Progress callback
+        if (onProgress) onProgress(i + 1, total)
+        
+        // Small delay between requests
+        await page.waitForTimeout(randomDelay(500, 1000))
+      })
+    )
+  }
+  
+  return enriched
+}
+
+// Extract ASIN from URL
+
 // Extract ASIN from URL
 function extractASIN(url: string): string {
   const match = url.match(/\/dp\/([A-Z0-9]{10})/) || url.match(/\/gp\/product\/([A-Z0-9]{10})/)
@@ -314,134 +577,63 @@ export async function searchAmazonBooks(
       console.log('[SCRAPER] No results found')
     }
     
-    const books: AmazonBook[] = []
+    // LIVE DOM EXTRACTION: Extract directly from browser DOM
+    console.log('[EXTRACT] Starting live DOM extraction...')
+    const liveBooks = await extractFromLiveDOM(page_instance, marketplaceConfig.baseUrl)
+    console.log(`[EXTRACT] Live DOM got ${liveBooks.length} books`)
     
-    // Try multiple container selectors
-    const containerSelectors = [
-      '[data-component-type="s-search-result"]',
-      '.s-result-item', 
-      '.sg-col-inner',
-      'div[data-asin]',
-      '.a-card-container',
-      '.s-ad-container',
-    ]
+    // Also try cheerio extraction as fallback
+    let cheerioBooks: AmazonBook[] = []
+    try {
+      cheerioBooks = await extractFromCheerio($, html, marketplaceConfig.baseUrl)
+    } catch (e: any) {
+      console.log('[EXTRACT] Cheerio extraction error:', e.message)
+    }
     
-    // Try each container selector
-    for (const selector of containerSelectors) {
-      const elements = $(selector)
-      console.log(`[EXTRACT] Selector "${selector}": ${elements.length} found`)
+    // MERGE: Combine live + cheerio (prefer live values)
+    const books = mergeExtractions(liveBooks, cheerioBooks)
+    console.log(`[EXTRACT] Total merged books: ${books.length}`)
+    
+    // ENRICHMENT: Get detailed data for top books
+    let enrichedBooks = books
+    if (books.length >= 3) {
+      console.log('[ENRICH] Starting product enrichment...')
       
-      if (elements.length === 0) continue
+      // Get top 10 ASINs
+      const topAsins = books.slice(0, 10).map(b => b.asin).filter(Boolean)
       
-      // Extract books from this container type
-      let extracted = 0
-      elements.each((_, element) => {
-        try {
-          const el = $(element)
-          const asin = el.attr('data-asin') || ''
-          if (!asin || asin.length < 5) return
-          
-          // Multi-selector for title
-          let title = ''
-          const titleSelectors = ['h2 span', '.a-size-medium', '.a-text-bold', 'h2 a span']
-          for (const sel of titleSelectors) {
-            const t = el.find(sel).first().text().trim()
-            if (t) { title = t; break }
+      try {
+        const enrichedMap = await enrichProducts(
+          page_instance, 
+          topAsins, 
+          marketplaceConfig.baseUrl,
+          (current, total) => console.log(`[ENRICH] ${current}/${total}`)
+        )
+        
+        // Merge enriched data
+        enrichedBooks = books.map(book => {
+          const extra = enrichedMap.get(book.asin)
+          if (extra) {
+            return { ...book, ...extra }
           }
-          if (!title || title.length < 3) return
-          
-          // URL
-          const urlEl = el.find('h2 a').first()
-          let url = ''
-          if (urlEl.length) {
-            url = marketplaceConfig.baseUrl + (urlEl.attr('href') || '').split('?')[0]
-          }
-          
-          // Author
-          let author = 'Unknown'
-          const authorSelectors = ['.a-color-secondary', '.a-size-base']
-          for (const sel of authorSelectors) {
-            const a = el.find(sel).first().text().trim()
-            if (a && a.length > 2) { author = a; break }
-          }
-          
-          // Price
-          let price = ''
-          const priceEl = el.find('.a-price, .a-price-whole').first()
-          if (priceEl.length) price = priceEl.text().trim()
-          
-          // Image
-          const imgEl = el.find('img').first()
-          const imageUrl = imgEl.attr('src') || imgEl.attr('data-old-hi-res') || ''
-          
-          books.push({
-            title,
-            author,
-            price,
-            rating: 0,
-            reviews: 0,
-            url,
-            imageUrl,
-            asin,
-          })
-          extracted++
-        } catch (e) {}
-      })
-      
-      if (extracted > 0) {
-        console.log(`[EXTRACT] ✅ Success: ${extracted} books from "${selector}"`)
-        break
+          return book
+        })
+        
+        console.log(`[ENRICH] Enriched ${enrichedMap.size} products`)
+      } catch (e: any) {
+        console.log('[ENRICH] Error:', e.message)
       }
     }
     
-    // If still no books, try raw HTML extraction
-    if (books.length === 0) {
-      console.log('[EXTRACT] ⚠️ Trying raw HTML regex extraction...')
-      
-      // Extract using regex on raw HTML
-      const asinRegex = /data-asin="([A-Z0-9]{10})"/g
-      let match
-      let count = 0
-      
-      while ((match = asinRegex.exec(html)) !== null && count < 20) {
-        const asin = match[1]
-        
-        // Find nearby title
-        const startIdx = Math.max(0, match.index - 500)
-        const endIdx = match.index
-        const snippet = html.substring(startIdx, endIdx)
-        
-        // Extract title from h2 tag before this ASIN
-        const titleMatch = snippet.match(/<h2[^>]*>([^<]{5,150})<\/h2>/)
-        const title = titleMatch ? titleMatch[1].trim() : ''
-        
-        if (title && !title.includes('class="a-text-ellipsis"')) {
-          books.push({
-            title,
-            author: 'Unknown',
-            price: '',
-            rating: 0,
-            reviews: 0,
-            url: `${marketplaceConfig.baseUrl}/dp/${asin}`,
-            imageUrl: '',
-            asin,
-          })
-          count++
-        }
-      }
-      
-      console.log(`[EXTRACT] Regex extraction: ${books.length} books`)
-    }
-    
-    console.log(`[EXTRACT] Total raw books: ${books.length}`)
+    console.log(`[SCRAPER] Total books: ${enrichedBooks.length}`)
     
     // DIAGNOSTICS: Calculate field completeness
     let completeBooks = 0
     let missingTitle = 0, missingPrice = 0, missingRating = 0, missingReviews = 0, missingImage = 0, missingUrl = 0, missingAsin = 0
     
     const validBooks: AmazonBook[] = []
-    
-    for (const book of books) {
+
+    for (const book of enrichedBooks) {
       const hasTitle = book.title && book.title.length > 3
       const hasPrice = book.price && book.price.length > 0
       const hasRating = book.rating > 0
@@ -466,7 +658,7 @@ export async function searchAmazonBooks(
     }
     
     // Filter to only valid books
-    const finalBooks = books.filter(b => 
+    const finalBooks = enrichedBooks.filter(b => 
       b.title && b.title.length > 3 && 
       (b.url?.length > 10 || b.price?.length > 0)
     )
