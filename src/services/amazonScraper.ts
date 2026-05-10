@@ -34,6 +34,14 @@ export interface SearchResult {
   searchTime: number
   page: number
   marketplace: string
+  blocked?: boolean
+  blockReason?: string
+  debug?: {
+    htmlLength: number
+    pageTitle: string
+    cardsFound: number
+    extractionStatus: string
+  }
 }
 
 export interface CompetitionAnalysis {
@@ -49,8 +57,10 @@ export interface CompetitionAnalysis {
 // Browser instance singleton
 let browser: Browser | null = null
 
+// Manual stealth implementation
 async function getBrowser(): Promise<Browser> {
   if (!browser || !browser.isConnected()) {
+    // Stealth launch with anti-detection args
     browser = await chromium.launch({
       headless: true,
       args: [
@@ -61,6 +71,18 @@ async function getBrowser(): Promise<Browser> {
         '--no-zygote',
         '--disable-web-security',
         '--disable-features=IsolateOrigins,site-per-process',
+        '--disable-background-networking',
+        '--disable-default-apps',
+        '--disable-extensions',
+        '--disable-sync',
+        '--disable-translate',
+        '--metrics-recording-only',
+        '--mute-audio',
+        '--no-first-run',
+        '--safebrowsing-disable-auto-update',
+        '--ignore-certificate-errors',
+        '--ignore-ssl-errors',
+        '--ignore-certificate-errors-spki-list',
       ],
     })
   }
@@ -111,28 +133,65 @@ export async function searchAmazonBooks(
   const startTime = Date.now()
   const marketplaceConfig = AMAZON_MARKETPLACES[marketplace] || AMAZON_MARKETPLACES['com']
   
+  // Stealth: Random viewport
+  const viewports = [
+    { width: 1920, height: 1080 },
+    { width: 1366, height: 768 },
+    { width: 1440, height: 900 },
+    { width: 1536, height: 864 },
+  ]
+  const viewport = viewports[Math.floor(Math.random() * viewports.length)]
+  
+  // Stealth: Realistic user agents
+  const userAgents = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
+  ]
+  const userAgent = userAgents[Math.floor(Math.random() * userAgents.length)]
+  
   try {
     const browser = await getBrowser()
     const context = await browser.newContext({
-      viewport: { width: 1920, height: 1080 },
-      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      viewport,
+      userAgent,
+      // Stealth: Locale settings
+      locale: 'en-US',
+      timezoneId: 'America/New_York',
+      permissions: ['geolocation'],
+      // Stealth: Extra headers
+      extraHTTPHeaders: {
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+      },
     })
     
     const page_instance = await context.newPage()
+    
+    // Stealth: Remove webdriver property
+    await page_instance.addInitScript(() => {
+      Object.defineProperty(navigator, 'webdriver', { get: () => undefined })
+    })
     
     // Build search URL
     const encodedKeyword = encodeURIComponent(keyword)
     const searchUrl = `${marketplaceConfig.baseUrl}/s?k=${encodedKeyword}&i=books&page=${page}&ref=nb_sb_noss`
     
     console.log(`Searching: ${searchUrl}`)
+    console.log(`[STEALTH] User-Agent: ${userAgent.substring(0, 30)}...`)
     
     await page_instance.goto(searchUrl, { 
       waitUntil: 'domcontentloaded',
       timeout: 30000 
     })
     
-    // Wait for content to load
+    // Random delay before interaction
     await page_instance.waitForTimeout(randomDelay(1500, 2500))
+    
+    // Stealth: Simulate human behavior - move mouse
+    await page_instance.mouse.move(Math.random() * 500, Math.random() * 500)
+    await page_instance.waitForTimeout(randomDelay(200, 500))
     
     // Try to handle any overlays
     try {
@@ -142,6 +201,54 @@ export async function searchAmazonBooks(
     // Get page content
     const html = await page_instance.content()
     const $ = cheerio.load(html)
+    
+    // DEBUG: Log extraction details
+    const pageTitle = $('title').text()
+    console.log(`[SCRAPER] Page title: ${pageTitle.substring(0, 50)}`)
+    console.log(`[SCRAPER] Raw HTML length: ${html.length}`)
+    
+    // Check for Amazon blocks
+    const isBlocked = (
+      pageTitle.toLowerCase().includes('robot') ||
+      pageTitle.toLowerCase().includes('captcha') ||
+      pageTitle.toLowerCase().includes('sorry') ||
+      pageTitle.toLowerCase().includes('verify') ||
+      pageTitle.toLowerCase().includes('challenge') ||
+      html.includes('captcha') ||
+      html.includes('sorry') && html.includes('interpret') ||
+      html.includes('Verify you are human') ||
+      html.includes('checking your browser') ||
+      html.includes('one-time')
+    )
+    
+    if (isBlocked) {
+      console.log('[SCRAPER] 🚫 BLOCKED: Amazon anti-bot detected')
+      console.log('[SCRAPER] Page title:', pageTitle.substring(0, 80))
+      
+      // Try to take screenshot for debug
+      try {
+        const screenshot = await page_instance.screenshot()
+        console.log(`[SCRAPER] Screenshot available: ${screenshot.length} bytes`)
+      } catch (e) {}
+      
+      await context.close()
+      return {
+        books: [],
+        totalResults: 0,
+        keyword,
+        searchTime: Date.now() - startTime,
+        page,
+        marketplace: marketplaceConfig.name,
+        blocked: true,
+        blockReason: pageTitle.substring(0, 50) || 'Amazon anti-bot triggered',
+      }
+    }
+    
+    // Check for empty/no results
+    const noResults = html.includes('No results for') || html.includes('nessun risultato') || html.includes('Aucun résultat')
+    if (noResults) {
+      console.log('[SCRAPER] No results found')
+    }
     
     const books: AmazonBook[] = []
     
@@ -262,13 +369,21 @@ export async function searchAmazonBooks(
     
     await context.close()
     
+    console.log(`[SCRAPER] Extracted ${books.length} books`)
+    
     return {
-      books: books.slice(0, 20), // Limit to 20 results
+      books: books.slice(0, 20),
       totalResults: totalResults || books.length,
       keyword,
       searchTime: Date.now() - startTime,
       page,
       marketplace: marketplaceConfig.name,
+      debug: {
+        htmlLength: html.length,
+        pageTitle: $('title').text().substring(0, 50),
+        cardsFound: books.length,
+        extractionStatus: books.length > 0 ? 'success' : 'empty',
+      },
     }
   } catch (error: any) {
     console.error('Amazon search error:', error.message)
@@ -279,6 +394,14 @@ export async function searchAmazonBooks(
       searchTime: Date.now() - startTime,
       page,
       marketplace: marketplaceConfig.name,
+      blocked: error.message.includes('blocked') || error.message.includes('403'),
+      blockReason: error.message.includes('blocked') ? 'Amazon blocked' : 'Scraper error',
+      debug: {
+        htmlLength: 0,
+        pageTitle: 'Error',
+        cardsFound: 0,
+        extractionStatus: 'error',
+      },
     }
   }
 }

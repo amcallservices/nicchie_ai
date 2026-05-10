@@ -85,11 +85,35 @@ export default function ResearchPage() {
     setHasResults(false)
     
     try {
-      // First: Get REAL Amazon data
+      // First: Enhance the query with better suggestions
+      let searchTerm = searchQuery
+      
+      try {
+        const enhanceRes = await fetch('/api/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            niche: searchQuery, 
+            type: 'suggest',
+            marketplace 
+          })
+        })
+        if (enhanceRes.ok) {
+          const enhanceData = await enhanceRes.json()
+          if (enhanceData.suggestions?.length > 0) {
+            searchTerm = enhanceData.suggestions[0]
+            console.log(`[RESEARCH] Enhanced keyword: ${searchQuery} -> ${searchTerm}`)
+          }
+        }
+      } catch (e) {
+        console.log('[RESEARCH] Using original keyword')
+      }
+      
+      // Then: Get REAL Amazon data
       const researchRes = await fetch('/api/research', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keyword: searchQuery, type: 'deep', marketplace })
+        body: JSON.stringify({ keyword: searchTerm, type: 'deep', marketplace })
       })
       
       let realData = null
@@ -97,11 +121,47 @@ export default function ResearchPage() {
         realData = await researchRes.json()
       }
       
+      // Check for blocked/empty results
+      let hasValidData = realData?.searchResults?.length > 5
+      
+      // If blocked or empty, try fallback keywords
+      if (!hasValidData && realData?.blocked) {
+        console.log('[RESEARCH] Blocked, trying fallback')
+        const fallbackKeywords = [
+          searchTerm,
+          `${searchQuery} book`,
+          `${searchQuery} guide`,
+          `${searchQuery} for beginners`,
+        ]
+        
+        for (const kw of fallbackKeywords) {
+          if (kw === searchTerm) continue
+          const retryRes = await fetch('/api/research', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ keyword: kw, type: 'search', marketplace })
+          })
+          if (retryRes.ok) {
+            const retryData = await retryRes.json()
+            if (retryData.searchResults?.length > 5) {
+              realData = retryData
+              searchTerm = kw
+              hasValidData = true
+              break
+            }
+          }
+        }
+      }
+      
+      // If still no data, use whatever we have
+      const books = realData?.searchResults || []
+      const hasData = books.length > 0
+      
       // Then: Get AI analysis
       const aiRes = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ niche: searchQuery, type: 'niche' })
+        body: JSON.stringify({ niche: searchTerm, type: 'niche' })
       })
       
       let aiData = { nicheScore: 50, profitScore: 50, saturationScore: 50, evergreenScore: 50, trendScore: 50 }
@@ -109,32 +169,47 @@ export default function ResearchPage() {
         aiData = await aiRes.json()
       }
       
-      // Combine real Amazon data with AI insights
+      // Adjust scores based on actual data
       const competition = realData?.competition
       const opportunity = realData?.opportunity
       
+      // Valid data check: need at least 5 books for reliable scores
+      const isValidData = books.length >= 5
+      
       setSelectedNiche({
         ...mockNiches[0],
-        name: searchQuery,
+        name: searchTerm,
         scores: {
-          nicheScore: opportunity?.score || aiData.nicheScore || 50,
-          profitScore: aiData.profitScore || 50,
-          saturationScore: competition?.saturation || aiData.saturationScore || 50,
+          nicheScore: hasData ? (opportunity?.score || aiData.nicheScore || 50) : 30,
+          profitScore: hasData ? (aiData.profitScore || 50) : 40,
+          saturationScore: isValidData ? (competition?.saturation || aiData.saturationScore || 50) : 70,
           evergreenScore: aiData.evergreenScore || 50,
           trendScore: aiData.trendScore || 50,
         },
         analysis: {
-          demand: `${realData?.totalResults || 0} books found on Amazon`,
-          competition: `Avg ${competition?.avgReviews || 0} reviews, ${competition?.avgRating || 0}⭐, $${competition?.avgPrice || 0} avg price`,
-          opportunities: 'Multiple opportunities available based on market gaps',
-          risks: 'Market risks identified based on competition',
-          recommendations: ['Focus on specific sub-niches', 'Target underserved audiences'],
+          demand: hasData 
+            ? `${realData?.totalResults || books.length} books found on Amazon`
+            : 'No data scraped - try more specific keyword',
+          competition: isValidData 
+            ? `Avg ${competition?.avgReviews || 0} reviews, ${competition?.avgRating || 0}⭐, $${competition?.avgPrice || 0} avg price`
+            : 'Insufficient data for analysis',
+          opportunities: hasValidData 
+            ? 'Multiple opportunities available based on market gaps'
+            : 'Try a more specific keyword',
+          risks: hasData 
+            ? 'Market risks identified based on competition'
+            : 'Unable to analyze competition',
+          recommendations: isValidData 
+            ? ['Focus on specific sub-niches', 'Target underserved audiences']
+            : ['Try a more specific keyword', 'Add type like "book" or "guide"'],
         },
         realData: {
-          books: realData?.searchResults || [],
-          totalResults: realData?.totalResults || 0,
+          books: books,
+          totalResults: realData?.totalResults || books.length,
           competitorAnalysis: competition,
           opportunity: opportunity,
+          debug: realData?.debug,
+          blocked: realData?.blocked,
         },
       })
     } catch (error) {

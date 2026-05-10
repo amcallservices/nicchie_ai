@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { 
   Search, 
   TrendingUp, 
@@ -19,7 +20,10 @@ import {
   Award,
   Zap,
   Target,
-  ChevronRight
+  ChevronRight,
+  DollarSign,
+  Calculator,
+  BookOpen
 } from 'lucide-react'
 import { 
   AreaChart, 
@@ -50,6 +54,33 @@ const KPI_CARDS = [
 
 export default function DashboardPage() {
   const [searchQuery, setSearchQuery] = useState('')
+  const [bsrInput, setBsrInput] = useState('')
+  const [priceInput, setPriceInput] = useState('9.99')
+  const [reviewsInput, setReviewsInput] = useState('')
+  const [salesEstimate, setSalesEstimate] = useState<any>(null)
+  const [estimating, setEstimating] = useState(false)
+
+  const handleEstimate = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setEstimating(true)
+    try {
+      const res = await fetch('/api/sales-estimate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          bsr: bsrInput ? parseInt(bsrInput) : 100000,
+          price: parseFloat(priceInput) || 9.99,
+          reviews: reviewsInput ? parseInt(reviewsInput) : 0,
+          marketplace: 'com',
+        }),
+      })
+      const data = await res.json()
+      setSalesEstimate(data)
+    } catch (error) {
+      console.error(error)
+    }
+    setEstimating(false)
+  }
 
   return (
     <DashboardLayout>
@@ -91,6 +122,103 @@ export default function DashboardPage() {
             />
           </form>
         </div>
+
+        {/* Sales Estimator */}
+        <Card className="mb-8 bg-gradient-to-r from-violet-900/20 to-indigo-900/20 border-violet-500/30">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-lg font-semibold flex items-center gap-2">
+              <Calculator className="h-5 w-5 text-violet-400" />
+              Sales Estimator
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleEstimate} className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div>
+                <label className="text-sm text-zinc-400 mb-1 block">BSR (optional)</label>
+                <Input
+                  type="number"
+                  placeholder="e.g., 50000"
+                  value={bsrInput}
+                  onChange={(e) => setBsrInput(e.target.value)}
+                  className="bg-zinc-800"
+                />
+              </div>
+              <div>
+                <label className="text-sm text-zinc-400 mb-1 block">Price ($)</label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  placeholder="9.99"
+                  value={priceInput}
+                  onChange={(e) => setPriceInput(e.target.value)}
+                  className="bg-zinc-800"
+                />
+              </div>
+              <div>
+                <label className="text-sm text-zinc-400 mb-1 block">Reviews</label>
+                <Input
+                  type="number"
+                  placeholder="e.g., 150"
+                  value={reviewsInput}
+                  onChange={(e) => setReviewsInput(e.target.value)}
+                  className="bg-zinc-800"
+                />
+              </div>
+              <div className="flex items-end">
+                <Button type="submit" className="w-full" disabled={estimating}>
+                  <DollarSign className="h-4 w-4 mr-2" />
+                  {estimating ? 'Calculating...' : 'Estimate'}
+                </Button>
+              </div>
+            </form>
+
+            {salesEstimate && (
+              <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="p-4 rounded-lg bg-zinc-800/50 text-center">
+                  <p className="text-zinc-400 text-sm">Daily Sales</p>
+                  <p className="text-2xl font-bold text-violet-400">
+                    ~{salesEstimate.estimatedDailySales}
+                  </p>
+                </div>
+                <div className="p-4 rounded-lg bg-zinc-800/50 text-center">
+                  <p className="text-zinc-400 text-sm">Monthly Sales</p>
+                  <p className="text-2xl font-bold text-cyan-400">
+                    {salesEstimate.estimatedMonthlySales}
+                  </p>
+                </div>
+                <div className="p-4 rounded-lg bg-zinc-800/50 text-center">
+                  <p className="text-zinc-400 text-sm">Revenue</p>
+                  <p className="text-2xl font-bold text-emerald-400">
+                    ${salesEstimate.estimatedMonthlyRevenue?.toFixed(2)}
+                  </p>
+                </div>
+                <div className="p-4 rounded-lg bg-zinc-800/50 text-center">
+                  <p className="text-zinc-400 text-sm">Royalties</p>
+                  <p className="text-2xl font-bold text-amber-400">
+                    ${salesEstimate.estimatedRoyalties?.toFixed(2)}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {salesEstimate && (
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Badge variant="outline">
+                  Rank: {salesEstimate.rankTier}
+                </Badge>
+                <Badge variant={salesEstimate.competitionStrength === 'very_high' ? 'destructive' : 'secondary'}>
+                  Competition: {salesEstimate.competitionStrength}
+                </Badge>
+                <Badge variant={salesEstimate.nicheEarningPotential === 'excellent' ? 'success' : 'warning'}>
+                  Potential: {salesEstimate.nicheEarningPotential}
+                </Badge>
+                <Badge variant="outline">
+                  Best Seller: {salesEstimate.bestSellerProbability}%
+                </Badge>
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         {/* KPI Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
