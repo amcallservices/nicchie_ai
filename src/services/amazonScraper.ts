@@ -25,6 +25,9 @@ export interface AmazonBook {
   format?: string
   pages?: number
   publicationDate?: string
+  bsr?: number
+  publisher?: string
+  status?: 'basic' | 'enriched' | 'partial' | 'failed'
 }
 
 export interface SearchResult {
@@ -332,8 +335,8 @@ async function enrichProduct(page: any, asin: string, baseUrl: string): Promise<
   try {
     // Navigate to product page with shorter timeout
     const productUrl = `${baseUrl}/dp/${asin}`
-    await page.goto(productUrl, { waitUntil: 'domcontentloaded', timeout: 15000 })
-    await page.waitForTimeout(randomDelay(1000, 1500))
+    await page.goto(productUrl, { waitUntil: 'domcontentloaded', timeout: 8000 })
+    await page.waitForTimeout(randomDelay(800, 1200))
     
     // Extract detailed fields
     const details = await page.$eval('body', () => {
@@ -398,27 +401,46 @@ async function enrichProducts(
   onProgress?: (current: number, total: number) => void
 ): Promise<Map<string, any>> {
   const enriched = new Map<string, any>()
-  const concurrency = 3  // Process 3 at a time
-  const total = Math.min(asins.length, 10)  // Max 10 products
+  const concurrency = 1  // Process 1 at a time (avoid anti-bot)
+  const total = Math.min(asins.length, 3)  // Max 3 products for safety
+  
+  console.log(`[ENRICH] Starting conservative enrichment: ${total} products`)
   
   for (let i = 0; i < total; i += concurrency) {
-    const batch = asins.slice(i, i + concurrency)
+    const asin = asins[i]
     
-    await Promise.all(
-      batch.map(async (asin) => {
-        const details = await enrichProduct(page, asin, baseUrl)
-        if (details) enriched.set(asin, details)
-        
-        // Progress callback
-        if (onProgress) onProgress(i + 1, total)
-        
-        // Small delay between requests
-        await page.waitForTimeout(randomDelay(500, 1000))
-      })
-    )
+    try {
+      const details = await enrichProduct(page, asin, baseUrl)
+      if (details && Object.keys(details).length > 0) {
+        enriched.set(asin, details)
+      }
+      
+      // Progress callback
+      if (onProgress) onProgress(i + 1, total)
+      
+      // Long delay between requests (2-5 seconds)
+      await page.waitForTimeout(randomDelay(2000, 5000))
+    } catch (e: any) {
+      console.log(`[ENRICH] Failed ${asin}:`, e.message)
+    }
   }
   
   return enriched
+}
+
+// SORT BY RELEVANCE: Prioritize books with highest engagement
+function sortByRelevance(books: AmazonBook[]): AmazonBook[] {
+  return [...books].sort((a, b) => {
+    // Primary: reviews (most important signal)
+    const reviewsA = a.reviews || 0
+    const reviewsB = b.reviews || 0
+    if (reviewsB !== reviewsA) return reviewsB - reviewsA
+    
+    // Secondary: rating
+    const ratingA = a.rating || 0
+    const ratingB = b.rating || 0
+    return ratingB - ratingA
+  })
 }
 
 // Extract ASIN from URL
@@ -594,13 +616,28 @@ export async function searchAmazonBooks(
     const books = mergeExtractions(liveBooks, cheerioBooks)
     console.log(`[EXTRACT] Total merged books: ${books.length}`)
     
-    // ENRICHMENT: Get detailed data for top books
-    let enrichedBooks = books
-    if (books.length >= 3) {
-      console.log('[ENRICH] Starting product enrichment...')
+    // STAGE 1: Return basic books immediately (don't wait for enrichment)
+    // Filter valid books for initial render
+    const basicBooks = books.filter(b => 
+      b.title && b.title.length > 3 && 
+      (b.url?.length > 10 || b.price?.length > 0)
+    ).map(b => ({ ...b, status: 'basic' as const }))
+    
+    console.log(`[SCRAPER] Basic books ready: ${basicBooks.length}`)
+    
+    // STAGE 2: Conservative background enrichment (top 3 only)
+    let enrichedBooks = basicBooks
+    let enrichmentStatus = 'pending'
+    let enrichedCount = 0
+    
+    // Sort by relevance first (highest reviews + ratings)
+    const sortedBooks = sortByRelevance(basicBooks)
+    
+    if (sortedBooks.length >= 5) {
+      console.log('[ENRICH] Starting background enrichment (top 3)...')
       
-      // Get top 10 ASINs
-      const topAsins = books.slice(0, 10).map(b => b.asin).filter(Boolean)
+      // Get top 3 ASINs sorted by relevance
+      const topAsins = sortedBooks.slice(0, 3).map(b => b.asin).filter(Boolean)
       
       try {
         const enrichedMap = await enrichProducts(
@@ -610,22 +647,28 @@ export async function searchAmazonBooks(
           (current, total) => console.log(`[ENRICH] ${current}/${total}`)
         )
         
-        // Merge enriched data
-        enrichedBooks = books.map(book => {
+        // Merge enriched data with status
+        enrichedBooks = sortedBooks.map(book => {
           const extra = enrichedMap.get(book.asin)
-          if (extra) {
-            return { ...book, ...extra }
+          if (extra && Object.keys(extra).length > 0) {
+            enrichedCount++
+            return { ...book, ...extra, status: extra.bsr ? 'enriched' : 'partial' }
           }
           return book
         })
         
-        console.log(`[ENRICH] Enriched ${enrichedMap.size} products`)
+        enrichmentStatus = enrichedCount > 0 ? 'complete' : 'partial'
+        console.log(`[ENRICH] Enriched ${enrichedCount} products`)
       } catch (e: any) {
-        console.log('[ENRICH] Error:', e.message)
+        console.log('[ENRICH] Error (keeping base data):', e.message)
+        enrichmentStatus = 'failed'
       }
     }
     
-    console.log(`[SCRAPER] Total books: ${enrichedBooks.length}`)
+    // Use enriched or fall back to basic
+    const finalBooks = enrichedBooks.length > 0 ? enrichedBooks : basicBooks
+    
+    console.log(`[SCRAPER] Final books: ${finalBooks.length} (status: ${enrichmentStatus})`)
     
     // DIAGNOSTICS: Calculate field completeness
     let completeBooks = 0
@@ -657,22 +700,20 @@ export async function searchAmazonBooks(
       }
     }
     
-    // Filter to only valid books
-    const finalBooks = enrichedBooks.filter(b => 
-      b.title && b.title.length > 3 && 
-      (b.url?.length > 10 || b.price?.length > 0)
-    )
+    // Use final enriched books  
+    // (enrichedBooks already contains all processed books)
     
     // Calculate completeness percentage
-    const totalFields = finalBooks.length * 7 // 7 fields per book
-    const filledFields = (finalBooks.length - missingTitle) + (finalBooks.length - missingPrice) + (finalBooks.length - missingRating) + 
-                   (finalBooks.length - missingReviews) + (finalBooks.length - missingImage) + 
-                   (finalBooks.length - missingUrl) + (finalBooks.length - missingAsin)
+    const finalList = enrichedBooks.length > 0 ? enrichedBooks : basicBooks
+    const totalFields = finalList.length * 7 // 7 fields per book
+    const filledFields = (finalList.length - missingTitle) + (finalList.length - missingPrice) + (finalList.length - missingRating) + 
+                   (finalList.length - missingReviews) + (finalList.length - missingImage) + 
+                   (finalList.length - missingUrl) + (finalList.length - missingAsin)
     const completeness = totalFields > 0 ? Math.round((filledFields / totalFields) * 100) : 0
     
     console.log(`[DIAGNOSTICS]
   - Total extracted: ${books.length}
-  - Valid books: ${finalBooks.length}
+  - Valid books: ${finalList.length}
   - Complete books: ${completeBooks}
   - Completeness: ${completeness}%
   - Missing: title=${missingTitle}, price=${missingPrice}, rating=${missingRating}, reviews=${missingReviews}, image=${missingImage}, url=${missingUrl}, asin=${missingAsin}
@@ -689,11 +730,11 @@ export async function searchAmazonBooks(
 
     await context.close()
 
-    console.log(`[SCRAPER] Extracted ${finalBooks.length} valid books`)
+    console.log(`[SCRAPER] Extracted ${finalList.length} valid books`)
 
     return {
-      books: finalBooks.slice(0, 20),
-      totalResults: totalResults || finalBooks.length,
+      books: finalList.slice(0, 20),
+      totalResults: totalResults || finalList.length,
       keyword,
       searchTime: Date.now() - startTime,
       page,
@@ -701,11 +742,11 @@ export async function searchAmazonBooks(
       debug: {
         htmlLength: html.length,
         pageTitle: $('title').text().substring(0, 50),
-        cardsFound: finalBooks.length,
-        extractionStatus: finalBooks.length > 0 ? 'success' : 'empty',
+        cardsFound: finalList.length,
+        extractionStatus: finalList.length > 0 ? 'success' : 'empty',
         diagnostics: {
           totalExtracted: books.length,
-          validBooks: finalBooks.length,
+          validBooks: finalList.length,
           completeBooks,
           completeness,
           missingTitle,
