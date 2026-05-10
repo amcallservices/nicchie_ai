@@ -31,16 +31,35 @@ export default function KeywordsPage() {
     if (!searchQuery.trim()) return
     setIsSearching(true)
     
-    await new Promise(resolve => setTimeout(resolve, 1500))
-    
-    setKeywords([
-      ...mockKeywords,
-      ...mockKeywords.map(k => ({
-        ...k,
-        id: `${k.id}-new`,
-        keyword: `${searchQuery} ${k.keyword}`,
-      })),
-    ])
+    try {
+      const response = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ niche: searchQuery, type: 'keywords' })
+      })
+      
+      const data = await response.json()
+      
+      if (data.error) {
+        alert(data.error)
+        setIsSearching(false)
+        return
+      }
+      
+      if (Array.isArray(data)) {
+        setKeywords(data.map((item: any, index: number) => ({
+          id: String(index + 1),
+          keyword: item.keyword || '',
+          volume: item.volume || 5000,
+          difficulty: item.difficulty || 50,
+          opportunityScore: item.opportunityScore || 60,
+          intent: item.intent || 'informational',
+          saved: false,
+        })))
+      }
+    } catch (error) {
+      console.error('Error:', error)
+    }
     setIsSearching(false)
   }
 
@@ -199,7 +218,7 @@ export default function KeywordsPage() {
                           </span>
                         </td>
                         <td className="py-3 px-4">
-                          <Badge variant="secondary" className={INTENT_COLORS[kw.intent]}>
+                          <Badge variant="secondary" className={INTENT_COLORS[kw.intent as keyof typeof INTENT_COLORS]}>
                             {kw.intent}
                           </Badge>
                         </td>

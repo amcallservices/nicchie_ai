@@ -1,454 +1,106 @@
-import { Niche, Keyword, Competitor, Trend, Project, MicroNiche, DashboardStats, PricingPlan } from '@/types'
+// Minimal fallback mock data
+// Used when API calls fail or during initial load
 
-export const mockNiches: Niche[] = [
+export const mockNiches = [
   {
     id: '1',
-    name: 'Meal Prep',
-    slug: 'meal-prep',
+    name: 'Getting Started',
     scores: {
-      nicheScore: 82,
-      profitScore: 78,
-      saturationScore: 65,
-      evergreenScore: 90,
-      trendScore: 75,
+      nicheScore: 0,
+      profitScore: 0,
+      saturationScore: 0,
+      evergreenScore: 0,
+      trendScore: 0,
     },
     analysis: {
-      demand: 'High demand with consistent search volume throughout the year',
-      competition: 'Medium competition with room for differentiation',
-      opportunities: 'Spin-off niches: meal prep for weight loss, keto meal prep, budget meal prep',
-      risks: 'Market saturation in generic meal prep books',
-      recommendations: [
-        'Focus on specific diet types (keto, vegan, paleo)',
-        'Target specific demographics (students, families, seniors)',
-        'Add unique angles (budget, quick meals, seasonal)',
-      ],
+      demand: '',
+      competition: '',
+      opportunities: '',
+      risks: '',
+      recommendations: [] as string[],
     },
-    trend: 'up',
-    competition: 'medium',
-    createdAt: '2024-01-15T10:00:00Z',
-    updatedAt: '2024-01-15T10:00:00Z',
+    realData: null as any,
   },
-  {
-    id: '2',
-    name: 'Journaling for Anxiety',
-    slug: 'journaling-anxiety',
-    scores: {
-      nicheScore: 91,
-      profitScore: 85,
-      saturationScore: 45,
-      evergreenScore: 95,
-      trendScore: 88,
-    },
-    analysis: {
-      demand: 'Very high demand, growing with mental health awareness',
-      competition: 'Low competition with strong opportunities',
-      opportunities: 'Combination niches, specific populations, interactive formats',
-      risks: 'Growing competition as awareness increases',
-      recommendations: [
-        'Create interactive journals with prompts',
-        'Target specific anxiety types',
-        'Add digital/print hybrid options',
-      ],
-    },
-    trend: 'up',
-    competition: 'low',
-    createdAt: '2024-01-14T10:00:00Z',
-    updatedAt: '2024-01-14T10:00:00Z',
-  },
-  {
-    id: '3',
-    name: 'Fitness Over 50',
-    slug: 'fitness-over-50',
-    scores: {
-      nicheScore: 78,
-      profitScore: 82,
-      saturationScore: 70,
-      evergreenScore: 85,
-      trendScore: 72,
-    },
-    analysis: {
-      demand: 'Strong demand from aging population',
-      competition: 'High competition from established authors',
-      opportunities: 'Specialized workouts, health conditions, specific fitness levels',
-      risks: 'High competition from established names',
-      recommendations: [
-        'Focus on specific health conditions',
-        'Add medical/expert credibility',
-        'Create comprehensive programs',
-      ],
-    },
-    trend: 'stable',
-    competition: 'high',
-    createdAt: '2024-01-13T10:00:00Z',
-    updatedAt: '2024-01-13T10:00:00Z',
-  },
-  {
-    id: '4',
-    name: 'Digital Minimalism',
-    slug: 'digital-minimalism',
-    scores: {
-      nicheScore: 85,
-      profitScore: 79,
-      saturationScore: 50,
-      evergreenScore: 88,
-      trendScore: 82,
-    },
-    analysis: {
-      demand: 'Growing demand as tech fatigue increases',
-      competition: 'Low to medium competition',
-      opportunities: 'Tech-specific guides, professional niches, family focused',
-      risks: 'Rapidly evolving tech landscape',
-      recommendations: [
-        'Target specific tech platforms',
-        'Focus on productivity/efficiency',
-        'Add professional/workplace angle',
-      ],
-    },
-    trend: 'up',
-    competition: 'low',
-    createdAt: '2024-01-12T10:00:00Z',
-    updatedAt: '2024-01-12T10:00:00Z',
-  },
-  {
-    id: '5',
-    name: 'ADHD Productivity',
-    slug: 'adhd-productivity',
-    scores: {
-      nicheScore: 88,
-      profitScore: 84,
-      saturationScore: 42,
-      evergreenScore: 92,
-      trendScore: 85,
-    },
-    analysis: {
-      demand: 'Very high demand from underserved audience',
-      competition: 'Low competition with strong differentiation',
-      opportunities: 'Specific contexts (work, school, home), comorbidity focus',
-      risks: 'Requires authentic understanding',
-      recommendations: [
-        'Build authentic credibility',
-        'Create actionable systems',
-        'Add neurodivergent perspectives',
-      ],
-    },
-    trend: 'up',
-    competition: 'low',
-    createdAt: '2024-01-11T10:00:00Z',
-    updatedAt: '2024-01-11T10:00:00Z',
-  },
-]
-
-export const mockMicroNiches: MicroNiche[] = [
-  {
-    id: '1',
-    target: 'Freelancers con ADHD',
-    problema: 'difficoltà a mantenere focus',
-    risultato: 'sistema di produttività personalizzato',
-    competition: 'low',
-    monetization: 85,
-    difficulty: 'medium',
-  },
-  {
-    id: '2',
-    target: 'Genitori single',
-    problema: 'mancanza di tempo per cucinare',
-    risultato: 'ricette veloci per famiglie',
-    competition: 'low',
-    monetization: 78,
-    difficulty: 'easy',
-  },
-  {
-    id: '3',
-    target: 'Donne over 40',
-    problema: 'cambiamenti ormonali',
-    risultato: 'programma fitness adattato',
-    competition: 'medium',
-    monetization: 82,
-    difficulty: 'medium',
-  },
-  {
-    id: '4',
-    target: 'Studenti universitari',
-    problema: 'stress da esami',
-    risultato: 'tecniche di studio efficienti',
-    competition: 'medium',
-    monetization: 75,
-    difficulty: 'easy',
-  },
-  {
-    id: '5',
-    target: 'Remote workers',
-    problema: 'isolamento lavorativo',
-    risultato: 'guida al benessere digitale',
-    competition: 'low',
-    monetization: 80,
-    difficulty: 'easy',
-  },
-]
-
-export const mockKeywords: Keyword[] = [
-  {
-    id: '1',
-    keyword: 'meal prep cookbook',
-    volume: 12400,
-    difficulty: 45,
-    opportunityScore: 72,
-    intent: 'transactional',
-  },
-  {
-    id: '2',
-    keyword: 'meal prep for weight loss',
-    volume: 8900,
-    difficulty: 38,
-    opportunityScore: 81,
-    intent: 'transactional',
-  },
-  {
-    id: '3',
-    keyword: 'meal prep recipes easy',
-    volume: 15600,
-    difficulty: 52,
-    opportunityScore: 65,
-    intent: 'informational',
-  },
-  {
-    id: '4',
-    keyword: 'meal prep containers',
-    volume: 22100,
-    difficulty: 58,
-    opportunityScore: 55,
-    intent: 'transactional',
-  },
-  {
-    id: '5',
-    keyword: 'weekly meal prep',
-    volume: 18100,
-    difficulty: 48,
-    opportunityScore: 68,
-    intent: 'informational',
-  },
-  {
-    id: '6',
-    keyword: 'keto meal prep',
-    volume: 6400,
-    difficulty: 32,
-    opportunityScore: 85,
-    intent: 'transactional',
-  },
-  {
-    id: '7',
-    keyword: 'vegan meal prep',
-    volume: 9800,
-    difficulty: 42,
-    opportunityScore: 74,
-    intent: 'transactional',
-  },
-  {
-    id: '8',
-    keyword: 'meal prep for couples',
-    volume: 2100,
-    difficulty: 25,
-    opportunityScore: 92,
-    intent: 'transactional',
-  },
-]
-
-export const mockCompetitors: Competitor[] = [
-  {
-    id: '1',
-    title: 'The Ultimate Meal Prep Cookbook',
-    author: 'Sarah Mitchell',
-    url: 'https://amazon.com/dp/B08XK2JQRQ',
-    price: 14.99,
-    reviews: 342,
-    rating: 4.5,
-    bsr: 1200,
-    analysis: {
-      strengths: ['Comprehensive recipes', 'Good photography', 'Clear instructions'],
-      weaknesses: ['Generic approach', 'Limited dietary options', 'No meal plans'],
-      opportunities: ['Specific diet types', 'Interactive elements', 'Video content'],
-      threats: ['New competitors', 'Market saturation', 'Price pressure'],
-    },
-  },
-  {
-    id: '2',
-    title: 'Meal Prep in 30 Minutes',
-    author: 'John Anderson',
-    url: 'https://amazon.com/dp/B09JKMVQHW',
-    price: 9.99,
-    reviews: 567,
-    rating: 4.3,
-    bsr: 890,
-  },
-  {
-    id: '3',
-    title: 'Healthy Meal Prep for Beginners',
-    author: 'Emily Chen',
-    url: 'https://amazon.com/dp/B07YPN8JVK',
-    price: 12.99,
-    reviews: 891,
-    rating: 4.6,
-    bsr: 650,
-  },
-  {
-    id: '4',
-    title: 'Keto Meal Prep Blueprint',
-    author: 'David Miller',
-    url: 'https://amazon.com/dp/B08TW9VSQV',
-    price: 11.99,
-    reviews: 234,
-    rating: 4.4,
-    bsr: 2100,
-  },
-]
-
-export const mockTrends: Trend[] = [
-  {
-    id: '1',
-    name: 'Digital Detox',
-    category: 'google',
-    value: 72,
-    change: 15,
-    trend: 'up',
-  },
-  {
-    id: '2',
-    name: ' manifestation journal',
-    category: 'google',
-    value: 68,
-    change: 22,
-    trend: 'up',
-  },
-  {
-    id: '3',
-    name: 'gut health books',
-    category: 'google',
-    value: 55,
-    change: 8,
-    trend: 'up',
-  },
-  {
-    id: '4',
-    name: 'work from home tips',
-    category: 'google',
-    value: 48,
-    change: -5,
-    trend: 'down',
-  },
-  {
-    id: '5',
-    name: 'intermittent fasting',
-    category: 'google',
-    value: 82,
-    change: 12,
-    trend: 'up',
-  },
-]
-
-export const mockProjects: Project[] = [
-  {
-    id: '1',
-    name: 'Fitness Over 50 Book',
-    description: 'Comprehensive fitness guide for adults over 50',
-    status: 'active',
-    niches: ['Fitness Over 50', 'Senior Health'],
-    createdAt: '2024-01-10T10:00:00Z',
-    updatedAt: '2024-01-15T10:00:00Z',
-  },
-  {
-    id: '2',
-    name: 'ADHD Productivity Series',
-    description: 'Series of books for ADHD productivity',
-    status: 'active',
-    niches: ['ADHD Productivity', 'Digital Minimalism'],
-    createdAt: '2024-01-08T10:00:00Z',
-    updatedAt: '2024-01-14T10:00:00Z',
-  },
-  {
-    id: '3',
-    name: 'Meal Prep Cookbook',
-    description: 'Healthy meal prep for busy professionals',
-    status: 'completed',
-    niches: ['Meal Prep', 'Healthy Eating'],
-    createdAt: '2024-01-01T10:00:00Z',
-    updatedAt: '2024-01-10T10:00:00Z',
-  },
-]
-
-export const mockDashboardStats: DashboardStats = {
-  totalSearches: 47,
-  activeProjects: 5,
-  savedNiches: 23,
-  creditsRemaining: 153,
-}
-
-export const pricingPlans: PricingPlan[] = [
-  {
-    name: 'Free',
-    price: 0,
-    interval: 'month',
-    features: [
-      '5 niche searches per month',
-      'Basic keyword research',
-      '3 saved niches',
-      '1 project',
-      'Community support',
-    ],
-  },
-  {
-    name: 'Pro',
-    price: 29,
-    interval: 'month',
-    popular: true,
-    features: [
-      'Unlimited niche searches',
-      'Advanced keyword research',
-      'Competitor analysis',
-      'Trend radar',
-      'AI book generator',
-      'Export to PDF/CSV',
-      '50 saved niches',
-      '10 projects',
-      'Priority support',
-    ],
-  },
-  {
-    name: 'Elite',
-    price: 79,
-    interval: 'month',
-    features: [
-      'Everything in Pro',
-      'API access',
-      'Custom integrations',
-      'White-label reports',
-      'Team collaboration',
-      'Dedicated account manager',
-      'Unlimited everything',
-      'Early access to features',
-      'Phone support',
-    ],
-  },
-]
-
-export const trendChartData = [
-  { date: 'Jan', value: 45 },
-  { date: 'Feb', value: 52 },
-  { date: 'Mar', value: 61 },
-  { date: 'Apr', value: 58 },
-  { date: 'May', value: 72 },
-  { date: 'Jun', value: 78 },
-]
-
-export const saturationData = [
-  { name: 'Low', value: 35, color: '#10b981' },
-  { name: 'Medium', value: 45, color: '#f59e0b' },
-  { name: 'High', value: 20, color: '#ef4444' },
 ]
 
 export const scoreData = [
-  { subject: 'Demand', A: 85, fullMark: 100 },
-  { subject: 'Competition', A: 45, fullMark: 100 },
-  { subject: 'Profit', A: 78, fullMark: 100 },
-  { subject: 'Evergreen', A: 90, fullMark: 100 },
-  { subject: 'Trend', A: 72, fullMark: 100 },
+  { name: 'Domanda', value: 75, fullMark: 100 },
+  { name: 'Concorrenza', value: 45, fullMark: 100 },
+  { name: 'Profitto', value: 80, fullMark: 100 },
+  { name: 'Trend', value: 65, fullMark: 100 },
+  { name: 'Evergreen', value: 85, fullMark: 100 },
+]
+
+export const trendChartData = [
+  { month: 'Gen', searches: 1200 },
+  { month: 'Feb', searches: 1350 },
+  { month: 'Mar', searches: 1100 },
+  { month: 'Apr', searches: 1450 },
+  { month: 'Mag', searches: 1600 },
+  { month: 'Giu', searches: 1750 },
+]
+
+export const saturationData = [
+  { category: 'Low', value: 40, color: '#8b5cf6' },
+  { category: 'Medium', value: 35, color: '#06b6d4' },
+  { category: 'High', value: 25, color: '#10b981' },
+]
+
+export const mockDashboardStats = [
+  { label: 'Total Searches', value: '1,234', change: '+12%', trend: 'up' },
+  { label: 'Avg Score', value: '72', change: '+5%', trend: 'up' },
+  { label: 'Profitable Niches', value: '89', change: '+23%', trend: 'up' },
+  { label: 'Saved Projects', value: '12', change: '0%', trend: 'stable' },
+]
+
+export const mockMicroNiches = [
+  {
+    id: '1',
+    target: 'Enter a niche above',
+    problema: 'Click analyze to generate micro-niches',
+    risultato: '',
+    competition: 'medium',
+    monetization: 70,
+    difficulty: 'medium',
+  },
+]
+
+export const mockKeywords = [
+  {
+    id: '1',
+    keyword: 'Enter a keyword above',
+    volume: 0,
+    difficulty: 0,
+    opportunityScore: 0,
+    intent: 'informational',
+    saved: false,
+  },
+]
+
+export const mockCompetitors = [
+  {
+    id: '1',
+    title: 'Enter a niche to analyze competitors',
+    author: '',
+    price: 0,
+    reviews: 0,
+    rating: 0,
+    bsr: '',
+  },
+]
+
+export const mockProjects = [
+  {
+    id: '1',
+    name: 'Sample Project',
+    niche: 'example',
+    status: 'active',
+    createdAt: new Date().toISOString(),
+  },
+]
+
+export const mockTrends = [
+  { id: '1', name: 'Trending Topic', growth: 150, category: 'health' },
+  { id: '2', name: 'Emerging Topic', growth: 85, category: 'self-help' },
+  { id: '3', name: 'Stable Topic', growth: 20, category: 'business' },
 ]

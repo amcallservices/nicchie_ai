@@ -85,19 +85,11 @@ export default function ProjectsPage() {
                 </div>
                 
                 <p className="text-sm text-zinc-400 mb-4 line-clamp-2">
-                  {project.description}
+                  {project.niche}
                 </p>
-
-                <div className="flex flex-wrap gap-2 mb-4">
-                  {project.niches.map((niche, i) => (
-                    <Badge key={i} variant="secondary" className="text-xs">
-                      {niche}
-                    </Badge>
-                  ))}
-                </div>
-
+	
                 <div className="flex items-center justify-between">
-                  <Badge variant="outline" className={STATUS_COLORS[project.status]}>
+                  <Badge variant="outline" className={STATUS_COLORS[project.status as keyof typeof STATUS_COLORS]}>
                     {project.status}
                   </Badge>
                   <div className="flex gap-2">

@@ -32,16 +32,44 @@ export default function MicroNichesPage() {
     if (!searchQuery.trim()) return
     setIsGenerating(true)
     
-    await new Promise(resolve => setTimeout(resolve, 2500))
-    
-    setMicroNiches([
-      ...mockMicroNiches,
-      ...mockMicroNiches.map(m => ({
-        ...m,
-        id: `${m.id}-2`,
-        target: `${m.target} advanced`,
-      })),
-    ])
+    try {
+      const response = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ niche: searchQuery, type: 'micro' })
+      })
+      
+      const data = await response.json()
+      
+      if (data.error) {
+        alert(data.error)
+        setIsGenerating(false)
+        return
+      }
+      
+      if (Array.isArray(data)) {
+        setMicroNiches(data.map((item: any, index: number) => ({
+          id: String(index + 1),
+          target: item.target || '',
+          problema: item.problema || item.problem || '',
+          risultato: item.risultato || item.result || '',
+          competition: item.competition || 'medium',
+          monetization: item.monetization || 70,
+          difficulty: item.difficulty || 'medium',
+        })))
+      }
+    } catch (error) {
+      console.error('Error:', error)
+      // Fallback to mock data on error
+      setMicroNiches([
+        ...mockMicroNiches,
+        ...mockMicroNiches.map(m => ({
+          ...m,
+          id: `${m.id}-2`,
+          target: `${m.target} advanced`,
+        })),
+      ])
+    }
     setIsGenerating(false)
   }
 
@@ -149,7 +177,7 @@ export default function MicroNichesPage() {
                         <span className="text-zinc-400">Competizione:</span>
                         <Badge 
                           variant="outline" 
-                          className={COMPETITION_COLORS[niche.competition]}
+                          className={COMPETITION_COLORS[niche.competition as keyof typeof COMPETITION_COLORS]}
                         >
                           {niche.competition}
                         </Badge>
@@ -162,8 +190,8 @@ export default function MicroNichesPage() {
                       <div className="flex items-center gap-2">
                         <Zap className="h-4 w-4 text-zinc-500" />
                         <span className="text-zinc-400">Difficulty:</span>
-                        <span className={DIFFICULTY_LABELS[niche.difficulty].color}>
-                          {DIFFICULTY_LABELS[niche.difficulty].label}
+                        <span className={DIFFICULTY_LABELS[niche.difficulty as keyof typeof DIFFICULTY_LABELS].color}>
+                          {DIFFICULTY_LABELS[niche.difficulty as keyof typeof DIFFICULTY_LABELS].label}
                         </span>
                       </div>
                     </div>

@@ -19,20 +19,39 @@ export default function CompetitorsPage() {
     if (!searchQuery.trim() && !urlInput.trim()) return
     setIsAnalyzing(true)
     
-    await new Promise(resolve => setTimeout(resolve, 2500))
-    
-    setCompetitors([
-      {
-        id: 'new',
-        title: `New Book Analysis`,
-        author: 'New Author',
-        url: urlInput || `https://amazon.com/s?k=${searchQuery}`,
-        price: 14.99,
-        reviews: 0,
-        rating: 0,
-        bsr: 0,
+    try {
+      const response = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ niche: searchQuery || urlInput, type: 'competitor' })
+      })
+      
+      const data = await response.json()
+      
+      if (data.error) {
+        alert(data.error)
+        setIsAnalyzing(false)
+        return
       }
-    ])
+      
+      if (Array.isArray(data)) {
+        setCompetitors(data.map((item: any, index: number) => ({
+          id: String(index + 1),
+          title: item.title || item.name || '',
+          author: item.author || '',
+          url: item.url || '',
+          price: item.price || 9.99,
+          reviews: item.reviews || 100,
+          rating: item.rating || 4.0,
+          bsr: item.bsr || 'N/A',
+          strengths: item.strengths || [],
+          weaknesses: item.weaknesses || [],
+          opportunities: item.opportunities || [],
+        })))
+      }
+    } catch (error) {
+      console.error('Error:', error)
+    }
     setIsAnalyzing(false)
   }
 

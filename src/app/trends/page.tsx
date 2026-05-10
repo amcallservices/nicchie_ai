@@ -153,14 +153,14 @@ export default function TrendsPage() {
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                {mockTrends.filter(t => t.trend === 'up').map((trend, index) => (
+                {mockTrends.filter(t => t.growth > 50).map((trend, index) => (
                   <div key={index} className="flex items-center justify-between p-3 rounded-lg bg-zinc-800/30">
                     <div>
                       <p className="font-medium text-zinc-100">{trend.name}</p>
                       <Badge variant="secondary" className="text-xs mt-1">{trend.category}</Badge>
                     </div>
                     <div className="text-right">
-                      <p className="text-emerald-400 font-bold">+{trend.change}%</p>
+                      <p className="text-emerald-400 font-bold">+{trend.growth}%</p>
                     </div>
                   </div>
                 ))}

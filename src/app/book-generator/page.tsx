@@ -27,48 +27,34 @@ export default function BookGeneratorPage() {
     if (!niche.trim()) return
     setIsGenerating(true)
     
-    await new Promise(resolve => setTimeout(resolve, 3000))
-    
-    setIdeas([
-      {
-        title: `The Complete Guide to ${niche}`,
-        subtitle: `Master the art of ${niche} with this comprehensive handbook`,
-        audience: 'Adults looking to improve their lives',
-        hook: 'What if everything you knew about success was wrong?',
-        usp: 'AI-powered system with proven results',
-      },
-      {
-        title: `${niche}: The Missing Manual`,
-        subtitle: `Everything they don't tell you about ${niche}`,
-        audience: 'Busy professionals',
-        hook: 'Stop struggling, start achieving',
-        usp: '90-day implementation plan',
-      },
-      {
-        title: `${niche} Made Simple`,
-        subtitle: `A beginner's guide to ${niche}`,
-        audience: 'Startups and beginners',
-        hook: 'Simple steps to extraordinary results',
-        usp: 'Visual learning approach',
-      },
-    ])
-    setOutline([
-      'Introduction: Why This Book',
-      'Chapter 1: The Foundation',
-      'Chapter 2: Getting Started',
-      'Chapter 3: Core Strategies',
-      'Chapter 4: Advanced Techniques',
-      'Chapter 5: Troubleshooting',
-      'Chapter 6: Long-term Success',
-      'Conclusion: Your Action Plan',
-      'Bonus Resources',
-    ])
-    setSeries([
-      `Book 1: Getting Started with ${niche}`,
-      `Book 2: ${niche} Mastery`,
-      `Book 3: ${niche} for Professionals`,
-      `Book 4: ${niche} in 30 Days`,
-    ])
+    try {
+      const response = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ niche, type: 'book' })
+      })
+      
+      const data = await response.json()
+      
+      if (data.error) {
+        alert(data.error)
+        setIsGenerating(false)
+        return
+      }
+      
+      if (Array.isArray(data)) {
+        setIdeas(data.map((item: any, index: number) => ({
+          title: item.title || '',
+          subtitle: item.subtitle || '',
+          audience: item.audience || '',
+          hook: item.hook || '',
+          usp: item.usp || '',
+        })))
+        setOutline(data[0]?.chapters || [])
+      }
+    } catch (error) {
+      console.error('Error:', error)
+    }
     setIsGenerating(false)
   }
 

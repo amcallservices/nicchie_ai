@@ -36,45 +36,16 @@ import {
   Bar
 } from 'recharts'
 import { 
-  mockNiches, 
-  mockDashboardStats, 
+  mockNiches,
   trendChartData, 
   saturationData 
 } from '@/lib/mock-data'
 
 const KPI_CARDS = [
-  {
-    title: 'Total Searches',
-    value: mockDashboardStats.totalSearches,
-    change: '+12%',
-    trend: 'up',
-    icon: Search,
-    color: 'violet',
-  },
-  {
-    title: 'Active Projects',
-    value: mockDashboardStats.activeProjects,
-    change: '+2',
-    trend: 'up',
-    icon: FolderOpen,
-    color: 'cyan',
-  },
-  {
-    title: 'Saved Niches',
-    value: mockDashboardStats.savedNiches,
-    change: '+8',
-    trend: 'up',
-    icon: Save,
-    color: 'emerald',
-  },
-  {
-    title: 'Credits Remaining',
-    value: mockDashboardStats.creditsRemaining,
-    change: 'Pro',
-    trend: 'up',
-    icon: Zap,
-    color: 'amber',
-  },
+  { title: 'Total Searches', value: '0', change: '+0%', trend: 'up', icon: Search, color: 'violet' },
+  { title: 'Active Projects', value: '0', change: '+0', trend: 'up', icon: FolderOpen, color: 'cyan' },
+  { title: 'Saved Niches', value: '0', change: '+0', trend: 'up', icon: Save, color: 'emerald' },
+  { title: 'Credits Remaining', value: 'Unlimited', change: 'Pro', trend: 'up', icon: Zap, color: 'amber' },
 ]
 
 export default function DashboardPage() {
@@ -229,7 +200,7 @@ export default function DashboardPage() {
                 {saturationData.map((item, index) => (
                   <div key={index} className="flex items-center gap-2">
                     <div className="w-3 h-3 rounded-full" style={{ backgroundColor: item.color }} />
-                    <span className="text-sm text-zinc-400">{item.name}</span>
+                    <span className="text-sm text-zinc-400">{item.category}</span>
                   </div>
                 ))}
               </div>
@@ -270,7 +241,7 @@ export default function DashboardPage() {
                           >
                             Score: {niche.scores.nicheScore}
                           </Badge>
-                          {niche.trend === 'up' && (
+                          {niche.scores.trendScore > 60 && (
                             <TrendingUp className="h-3 w-3 text-emerald-400" />
                           )}
                         </div>

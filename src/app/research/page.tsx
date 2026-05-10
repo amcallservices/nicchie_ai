@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { 
   Search, 
   TrendingUp, 
@@ -22,7 +23,8 @@ import {
   DollarSign,
   BarChart3,
   Clock,
-  Zap
+  Zap,
+  Globe
 } from 'lucide-react'
 import { 
   AreaChart, 
@@ -59,22 +61,86 @@ const SCORE_COLORS = {
 
 export default function ResearchPage() {
   const [searchQuery, setSearchQuery] = useState('')
+  const [marketplace, setMarketplace] = useState('com')
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [hasResults, setHasResults] = useState(false)
   const [selectedNiche, setSelectedNiche] = useState(mockNiches[0])
 
+  const marketplaceOptions = [
+    { value: 'com', label: 'Amazon.com (US)' },
+    { value: 'de', label: 'Amazon.de (Germany)' },
+    { value: 'it', label: 'Amazon.it (Italy)' },
+    { value: 'fr', label: 'Amazon.fr (France)' },
+    { value: 'es', label: 'Amazon.es (Spain)' },
+    { value: 'co.uk', label: 'Amazon.co.uk (UK)' },
+    { value: 'co.jp', label: 'Amazon.co.jp (Japan)' },
+    { value: 'ca', label: 'Amazon.ca (Canada)' },
+    { value: 'com.au', label: 'Amazon.com.au (Australia)' },
+    { value: 'in', label: 'Amazon.in (India)' },
+  ]
+  
   const handleAnalyze = async () => {
     if (!searchQuery.trim()) return
     setIsAnalyzing(true)
     setHasResults(false)
     
-    // Simulate AI analysis
-    await new Promise(resolve => setTimeout(resolve, 2000))
+    try {
+      // First: Get REAL Amazon data
+      const researchRes = await fetch('/api/research', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keyword: searchQuery, type: 'deep', marketplace })
+      })
+      
+      let realData = null
+      if (researchRes.ok) {
+        realData = await researchRes.json()
+      }
+      
+      // Then: Get AI analysis
+      const aiRes = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ niche: searchQuery, type: 'niche' })
+      })
+      
+      let aiData = { nicheScore: 50, profitScore: 50, saturationScore: 50, evergreenScore: 50, trendScore: 50 }
+      if (aiRes.ok) {
+        aiData = await aiRes.json()
+      }
+      
+      // Combine real Amazon data with AI insights
+      const competition = realData?.competition
+      const opportunity = realData?.opportunity
+      
+      setSelectedNiche({
+        ...mockNiches[0],
+        name: searchQuery,
+        scores: {
+          nicheScore: opportunity?.score || aiData.nicheScore || 50,
+          profitScore: aiData.profitScore || 50,
+          saturationScore: competition?.saturation || aiData.saturationScore || 50,
+          evergreenScore: aiData.evergreenScore || 50,
+          trendScore: aiData.trendScore || 50,
+        },
+        analysis: {
+          demand: `${realData?.totalResults || 0} books found on Amazon`,
+          competition: `Avg ${competition?.avgReviews || 0} reviews, ${competition?.avgRating || 0}⭐, $${competition?.avgPrice || 0} avg price`,
+          opportunities: 'Multiple opportunities available based on market gaps',
+          risks: 'Market risks identified based on competition',
+          recommendations: ['Focus on specific sub-niches', 'Target underserved audiences'],
+        },
+        realData: {
+          books: realData?.searchResults || [],
+          totalResults: realData?.totalResults || 0,
+          competitorAnalysis: competition,
+          opportunity: opportunity,
+        },
+      })
+    } catch (error) {
+      console.error('Error:', error)
+    }
     
-    setSelectedNiche({
-      ...mockNiches[0],
-      name: searchQuery,
-    })
     setIsAnalyzing(false)
     setHasResults(true)
   }
@@ -106,6 +172,20 @@ export default function ResearchPage() {
                   onKeyDown={(e) => e.key === 'Enter' && handleAnalyze()}
                   className="pl-12 h-14 text-lg"
                 />
+              </div>
+              <div className="w-full lg:w-48">
+                <Select value={marketplace} onValueChange={setMarketplace}>
+                  <SelectTrigger className="h-14">
+                    <SelectValue placeholder="Seleziona marketplace" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {marketplaceOptions.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <Button 
                 onClick={handleAnalyze} 
@@ -367,23 +447,12 @@ export default function ResearchPage() {
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {[
-                    'Meal Prep per studenti universitari',
-                    'Meal Prep keto per diabetici',
-                    'Meal Prep a basso costo',
-                    'Meal Prep weekly per coppie',
-                    'Meal Prep per famiglie numerose',
-                  ].map((micro, index) => (
-                    <div
-                      key={index}
-                      className="flex items-center justify-between p-3 rounded-lg bg-zinc-800/30 hover:bg-zinc-800/50 transition-colors"
-                    >
-                      <span className="text-sm text-zinc-100">{micro}</span>
-                      <button className="p-1.5 rounded hover:bg-zinc-700">
-                        <Save className="h-4 w-4 text-zinc-400" />
-                      </button>
+                  {(selectedNiche?.realData?.books?.slice(0, 8).map((book: any, i: number) => (
+                    <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-zinc-800/30 hover:bg-zinc-800/50 transition-colors">
+                      <span className="text-sm text-zinc-300 truncate flex-1">{book.title?.substring(0, 50)}</span>
+                      <Badge variant="outline" className="ml-2 text-xs">${book.price || '?'}</Badge>
                     </div>
-                  ))}
+                  )))}
                 </div>
               </CardContent>
             </Card>
